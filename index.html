@@ -1,0 +1,607 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport"
+        content="width=device-width, initial-scale=1, maximum-scale=1">
+
+  <title>Vehicle Access System</title>
+
+  <script src="https://unpkg.com/html5-qrcode"
+          type="text/javascript"></script>
+
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f3f6f9;
+      margin: 0;
+      color: #17202a;
+    }
+
+    .wrap {
+      max-width: 520px;
+      margin: auto;
+      padding: 16px;
+    }
+
+    .card {
+      background: #fff;
+      border-radius: 18px;
+      padding: 18px;
+      margin: 12px 0;
+      box-shadow: 0 3px 12px rgba(0,0,0,.08);
+    }
+
+    h1 {
+      font-size: 22px;
+      margin: 4px 0 14px;
+      text-align: center;
+    }
+
+    label {
+      font-size: 13px;
+      font-weight: bold;
+      display: block;
+      margin: 10px 0 5px;
+    }
+
+    select,
+    input,
+    button {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 13px;
+      border-radius: 10px;
+      border: 1px solid #ccd3da;
+      font-size: 16px;
+    }
+
+    button {
+      border: 0;
+      background: #146c94;
+      color: #fff;
+      font-weight: bold;
+      margin-top: 10px;
+    }
+
+    button.secondary {
+      background: #5f6b76;
+    }
+
+    .status {
+      text-align: center;
+      font-size: 24px;
+      font-weight: 800;
+      padding: 12px;
+      border-radius: 12px;
+      margin: 12px 0;
+    }
+
+    .ok {
+      background: #d1fadf;
+      color: #067647;
+    }
+
+    .bad {
+      background: #fee4e2;
+      color: #b42318;
+    }
+
+    .hidden {
+      display: none;
+    }
+
+    .vehicle-photo {
+      width: 100%;
+      max-height: 240px;
+      object-fit: contain;
+      border-radius: 12px;
+      background: #eef1f4;
+    }
+
+    .row {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 7px 0;
+      border-bottom: 1px solid #eee;
+    }
+
+    .row b {
+      min-width: 110px;
+    }
+
+    .muted {
+      color: #667085;
+      font-size: 13px;
+      text-align: center;
+    }
+
+    #reader {
+      width: 100%;
+    }
+  </style>
+</head>
+
+<body>
+
+<div class="wrap">
+
+  <div class="card">
+    <h1>VEHICLE ACCESS SYSTEM</h1>
+
+    <label>Gate</label>
+    <select id="gate">
+      <option>GATE 1</option>
+      <option>GATE 2</option>
+      <option>GATE 3</option>
+    </select>
+
+    <label>Guard ID</label>
+    <input id="guard" placeholder="e.g. G01">
+  </div>
+
+
+  <div class="card">
+
+    <div id="reader"></div>
+
+    <button id="startBtn"
+            onclick="startScanner()">
+      SCAN QR CODE
+    </button>
+
+    <button id="stopBtn"
+            class="secondary hidden"
+            onclick="stopScanner()">
+      STOP SCANNER
+    </button>
+
+    <p class="muted">
+      Scan the QR displayed on the vehicle windshield.
+    </p>
+
+  </div>
+
+
+  <div id="resultCard" class="card hidden">
+
+    <div id="statusBox" class="status"></div>
+
+    <img id="photo"
+         class="vehicle-photo hidden">
+
+    <div id="details"></div>
+
+    <button id="entryBtn"
+            onclick="save('ENTRY')">
+      ALLOW ENTRY
+    </button>
+
+    <button id="exitBtn"
+            class="secondary"
+            onclick="save('EXIT')">
+      ALLOW EXIT
+    </button>
+
+    <button onclick="resetScreen()"
+            class="secondary">
+      NEXT VEHICLE
+    </button>
+
+  </div>
+
+</div>
+
+
+<script>
+
+/*
+ * =========================================================
+ * IMPORTANT:
+ * PUT YOUR APPS SCRIPT WEB APP /exec URL HERE
+ * =========================================================
+ */
+
+const API_URL =
+  "https://script.google.com/macros/s/AKfycbwy_txPu3BUoN3n4CHsQYLQlE1IW1DSOGpcV1NpdBkVpCbMQLqzsWohTMlEmB0ReQcR/exec";
+
+
+let scanner = null;
+let current = null;
+let busy = false;
+
+
+/* =========================================================
+   QR SCANNER
+   ========================================================= */
+
+function startScanner() {
+
+  if (scanner) return;
+
+  scanner = new Html5Qrcode("reader");
+
+  scanner.start(
+    { facingMode: "environment" },
+
+    {
+      fps: 10,
+      qrbox: {
+        width: 250,
+        height: 250
+      }
+    },
+
+    text => {
+
+      stopScanner();
+
+      lookup(text);
+
+    },
+
+    errorMessage => {
+      // Ignore normal scanning errors.
+    }
+
+  ).then(() => {
+
+    document
+      .getElementById("startBtn")
+      .classList.add("hidden");
+
+    document
+      .getElementById("stopBtn")
+      .classList.remove("hidden");
+
+  }).catch(err => {
+
+    console.error(err);
+
+    alert(
+      "Camera could not start.\n\n" +
+      "Please allow camera access and try again."
+    );
+
+    scanner = null;
+
+  });
+}
+
+
+/* =========================================================
+   STOP SCANNER
+   ========================================================= */
+
+function stopScanner() {
+
+  if (!scanner) return;
+
+  scanner.stop()
+    .then(() => {
+
+      scanner.clear();
+
+      scanner = null;
+
+      document
+        .getElementById("startBtn")
+        .classList.remove("hidden");
+
+      document
+        .getElementById("stopBtn")
+        .classList.add("hidden");
+
+    })
+    .catch(() => {
+
+      scanner = null;
+
+    });
+}
+
+
+/* =========================================================
+   LOOK UP VEHICLE
+   ========================================================= */
+
+function lookup(qr) {
+
+  busy = true;
+
+  const callbackName =
+    "vehicleCallback_" + Date.now();
+
+  window[callbackName] = function(data) {
+
+    delete window[callbackName];
+
+    showResult(data);
+
+  };
+
+  const script =
+    document.createElement("script");
+
+  const url =
+    API_URL +
+    "?api=getVehicle" +
+    "&qrId=" + encodeURIComponent(qr) +
+    "&callback=" + callbackName;
+
+  script.src = url;
+
+  script.onerror = function() {
+
+    delete window[callbackName];
+
+    alert("Could not connect to the vehicle database.");
+
+    busy = false;
+  };
+
+  document.body.appendChild(script);
+
+}
+
+
+/* =========================================================
+   DISPLAY VEHICLE RESULT
+   ========================================================= */
+
+function showResult(data) {
+
+  current = data;
+
+  const card =
+    document.getElementById("resultCard");
+
+  const box =
+    document.getElementById("statusBox");
+
+  card.classList.remove("hidden");
+
+  box.className =
+    "status " +
+    (data.authorized ? "ok" : "bad");
+
+  box.textContent =
+    data.authorized
+      ? "🟢 AUTHORIZED"
+      : "🔴 " + (data.result || "DENIED");
+
+
+  const v = data.vehicle || {};
+
+  let html = "";
+
+  [
+    ["QR ID", v.qrId],
+    ["Plate", v.plate],
+    ["Driver", v.driver],
+    ["Company", v.company],
+    ["Vehicle", v.vehicleType],
+    ["Make", v.make],
+    ["Color", v.color],
+    ["Status", v.status],
+    ["Valid Until", v.validUntil],
+    ["Remarks", v.remarks]
+
+  ].forEach(x => {
+
+    if (
+      x[1] !== undefined &&
+      x[1] !== ""
+    ) {
+
+      html +=
+        `<div class="row">
+          <b>${esc(x[0])}</b>
+          <span>${esc(x[1])}</span>
+        </div>`;
+
+    }
+
+  });
+
+
+  document.getElementById("details")
+    .innerHTML =
+      html +
+      `<p class="muted">
+        ${esc(data.message || "")}
+      </p>`;
+
+
+  const photo =
+    document.getElementById("photo");
+
+  if (
+    v.photo &&
+    /^https?:\/\//i.test(v.photo)
+  ) {
+
+    photo.src = v.photo;
+
+    photo.classList.remove("hidden");
+
+  } else {
+
+    photo.classList.add("hidden");
+
+  }
+
+
+  document.getElementById("entryBtn")
+    .style.display =
+      data.authorized ? "block" : "none";
+
+  document.getElementById("exitBtn")
+    .style.display =
+      data.authorized ? "block" : "none";
+
+
+  busy = false;
+}
+
+
+/* =========================================================
+   SAVE ENTRY / EXIT
+   ========================================================= */
+
+function save(action) {
+
+  if (!current || !current.vehicle)
+    return;
+
+
+  const guard =
+    document
+      .getElementById("guard")
+      .value
+      .trim();
+
+
+  if (!guard) {
+
+    alert("Enter Guard ID first.");
+
+    return;
+  }
+
+
+  if (busy) return;
+
+  busy = true;
+
+
+  const callbackName =
+    "logCallback_" + Date.now();
+
+
+  window[callbackName] = function(data) {
+
+    delete window[callbackName];
+
+    busy = false;
+
+    if (!data.ok) {
+
+      alert(
+        "Error: " +
+        (data.error || "Could not record access.")
+      );
+
+      return;
+    }
+
+
+    alert(
+      "Recorded: " +
+      data.result +
+      "\nLog ID: " +
+      data.logId
+    );
+
+
+    resetScreen();
+
+  };
+
+
+  const script =
+    document.createElement("script");
+
+
+  const params = new URLSearchParams({
+
+    api: "logAccess",
+
+    qrId: current.vehicle.qrId,
+
+    gate:
+      document.getElementById("gate").value,
+
+    guardId: guard,
+
+    action: action,
+
+    remarks: current.message || "",
+
+    callback: callbackName
+
+  });
+
+
+  script.src =
+    API_URL + "?" + params.toString();
+
+
+  script.onerror = function() {
+
+    delete window[callbackName];
+
+    busy = false;
+
+    alert(
+      "Could not connect to the access-log server."
+    );
+
+  };
+
+
+  document.body.appendChild(script);
+
+}
+
+
+/* =========================================================
+   RESET
+   ========================================================= */
+
+function resetScreen() {
+
+  current = null;
+
+  busy = false;
+
+  document
+    .getElementById("resultCard")
+    .classList.add("hidden");
+
+  document
+    .getElementById("details")
+    .innerHTML = "";
+
+  document
+    .getElementById("photo")
+    .classList.add("hidden");
+
+}
+
+
+/* =========================================================
+   HTML ESCAPE
+   ========================================================= */
+
+function esc(s) {
+
+  return String(s ?? "")
+    .replace(
+      /[&<>"']/g,
+      m => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#039;"
+      }[m])
+    );
+
+}
+
+</script>
+
+</body>
+</html>
